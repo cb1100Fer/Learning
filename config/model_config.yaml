@@ -1,0 +1,52 @@
+# Model Configuration
+
+# Image preprocessing settings
+image:
+  input_size: [224, 224]  # Standard ImageNet size
+  mean: [0.485, 0.456, 0.406]  # ImageNet normalization
+  std: [0.229, 0.224, 0.225]
+  channels: 3
+
+# Model architecture settings
+model:
+  name: "resnet50"  # Options: resnet50, efficientnet_b0, vit_base, custom
+  num_classes: 100  # Number of tree species to identify
+  pretrained: true
+  freeze_backbone: false
+  dropout_rate: 0.3
+
+# Training settings
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  epochs: 100
+  optimizer: "adam"  # Options: adam, sgd, adamw
+  scheduler: "cosine"  # Options: cosine, step, plateau
+  early_stopping_patience: 10
+
+# Data augmentation
+augmentation:
+  enabled: true
+  techniques:
+    - horizontal_flip: 0.5
+    - vertical_flip: 0.2
+    - rotation: 15
+    - color_jitter:
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.1
+    - random_crop: 0.8
+    - gaussian_blur: 0.1
+
+# Feature types weights (for multi-input models)
+feature_weights:
+  leaf: 0.5
+  bark: 0.3
+  seed: 0.2
+
+# Inference settings
+inference:
+  confidence_threshold: 0.7
+  top_k: 5  # Return top-k predictions
+  ensemble: false  # Use model ensemble
