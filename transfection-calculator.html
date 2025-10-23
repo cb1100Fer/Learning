@@ -164,22 +164,31 @@
 <body>
     <div class="container">
         <h1>🧬 Transfection Reagent Calculator</h1>
-        <p class="subtitle">Calculate reagent amounts for your cellular transfections</p>
+        <p class="subtitle">Calculate reagent amounts for DNA & siRNA transfections (adherent & suspension)</p>
 
         <div class="info-box">
-            <strong>ℹ️ How to use:</strong> Select your reagent and plate format, enter the number of wells you're transfecting, and click calculate. The calculator includes 10% overage for pipetting error.
+            <strong>ℹ️ How to use:</strong> Select your transfection reagent (the form will adapt automatically). Choose your plate format or culture volume, enter the number of wells, and click calculate. All protocols use exact manufacturer specifications and include 10% overage for pipetting error.
         </div>
 
         <form id="transfection-form">
             <div class="form-group">
                 <label for="reagent">Transfection Reagent:</label>
-                <select id="reagent" required>
+                <select id="reagent" required onchange="handleReagentChange()">
                     <option value="">-- Select Reagent --</option>
-                    <option value="lipo2000">Lipofectamine 2000</option>
-                    <option value="lipo3000">Lipofectamine 3000</option>
-                    <option value="pei">PEI (Polyethylenimine)</option>
-                    <option value="fugene">FuGENE HD</option>
-                    <option value="jetprime">jetPRIME</option>
+                    <optgroup label="DNA Transfection - Adherent Cells">
+                        <option value="lipo2000">Lipofectamine 2000</option>
+                        <option value="lipo3000">Lipofectamine 3000</option>
+                        <option value="lipoLTX">Lipofectamine LTX (with PLUS)</option>
+                        <option value="fugene">FuGENE HD (Promega)</option>
+                        <option value="pei">PEI (Polyethylenimine)</option>
+                        <option value="jetprime">jetPRIME</option>
+                    </optgroup>
+                    <optgroup label="RNA/siRNA Transfection">
+                        <option value="rnaimax">Lipofectamine RNAiMAX</option>
+                    </optgroup>
+                    <optgroup label="Suspension Culture">
+                        <option value="expiCHO">Expifectamine CHO</option>
+                    </optgroup>
                 </select>
             </div>
 
@@ -202,9 +211,14 @@
                 </div>
             </div>
 
-            <div class="form-group">
-                <label for="dna-amount">DNA per Well (µg):</label>
+            <div class="form-group" id="nucleic-acid-group">
+                <label for="dna-amount" id="nucleic-acid-label">DNA per Well (µg):</label>
                 <input type="number" id="dna-amount" step="0.1" placeholder="Leave blank for default" min="0">
+            </div>
+
+            <div class="form-group" id="culture-volume-group" style="display:none;">
+                <label for="culture-volume">Culture Volume (mL):</label>
+                <input type="number" id="culture-volume" step="1" placeholder="e.g., 30" min="1">
             </div>
 
             <button type="submit">Calculate Reagents</button>
@@ -217,11 +231,13 @@
     </div>
 
     <script>
-        // Protocol database - contains all the information for different reagents and plate formats
+        // Protocol database - EXACT manufacturer protocols
         const protocols = {
             lipo2000: {
                 name: "Lipofectamine 2000",
-                ratio: 2.5, // µL reagent per µg DNA
+                type: "DNA",
+                culture: "adherent",
+                ratio: 2.5, // µL reagent per µg DNA (Thermo Fisher protocol)
                 defaultDNA: {
                     6: 2.5,
                     12: 1.0,
@@ -235,12 +251,37 @@
                     24: 50,
                     48: 25,
                     96: 10
-                }
+                },
+                incubationTime: "5 minutes"
             },
             lipo3000: {
                 name: "Lipofectamine 3000",
-                ratio: 2.0,
-                p3000Ratio: 2.0, // µL P3000 per µg DNA
+                type: "DNA",
+                culture: "adherent",
+                ratio: 2.0, // µL Lipo3000 per µg DNA (Thermo Fisher official)
+                p3000Ratio: 2.0, // µL P3000 per µg DNA (Thermo Fisher official)
+                defaultDNA: {
+                    96: 0.1,
+                    48: 0.25,
+                    24: 0.5,
+                    12: 1.0,
+                    6: 2.5
+                },
+                dilutionMedia: {
+                    96: 25,
+                    48: 25,
+                    24: 50,
+                    12: 50,
+                    6: 125
+                },
+                incubationTime: "10-20 minutes"
+            },
+            lipoLTX: {
+                name: "Lipofectamine LTX with PLUS",
+                type: "DNA",
+                culture: "adherent",
+                ratio: 2.5, // µL LTX per µg DNA (typical)
+                plusRatio: 1.0, // µL PLUS per µg DNA (Thermo Fisher: 1:1)
                 defaultDNA: {
                     6: 2.5,
                     12: 1.0,
@@ -249,15 +290,41 @@
                     96: 0.1
                 },
                 dilutionMedia: {
-                    6: 125,
-                    12: 50,
-                    24: 25,
-                    48: 12.5,
-                    96: 5
-                }
+                    6: 250,
+                    12: 100,
+                    24: 50,
+                    48: 25,
+                    96: 10
+                },
+                incubationTime: "30 minutes",
+                twoStep: true
+            },
+            fugene: {
+                name: "FuGENE HD",
+                type: "DNA",
+                culture: "adherent",
+                ratio: 3.0, // µL reagent per µg DNA (Promega recommended 3:1)
+                defaultDNA: {
+                    96: 0.1,
+                    48: 0.2,
+                    24: 0.4,
+                    12: 0.8,
+                    6: 2.0
+                },
+                dilutionMedia: {
+                    96: 10,
+                    48: 25,
+                    24: 50,
+                    12: 100,
+                    6: 200
+                },
+                incubationTime: "15 minutes",
+                note: "FuGENE is added directly to media (no separate dilution tube)"
             },
             pei: {
                 name: "PEI (1 mg/mL)",
+                type: "DNA",
+                culture: "adherent",
                 ratio: 3.0, // µL per µg DNA (3:1 ratio)
                 defaultDNA: {
                     6: 2.5,
@@ -272,28 +339,13 @@
                     24: 50,
                     48: 25,
                     96: 10
-                }
-            },
-            fugene: {
-                name: "FuGENE HD",
-                ratio: 3.0,
-                defaultDNA: {
-                    6: 2.5,
-                    12: 1.0,
-                    24: 0.5,
-                    48: 0.25,
-                    96: 0.1
                 },
-                dilutionMedia: {
-                    6: 250,
-                    12: 100,
-                    24: 50,
-                    48: 25,
-                    96: 10
-                }
+                incubationTime: "15-20 minutes"
             },
             jetprime: {
                 name: "jetPRIME",
+                type: "DNA",
+                culture: "adherent",
                 ratio: 2.0,
                 defaultDNA: {
                     6: 2.0,
@@ -308,9 +360,84 @@
                     24: 50,
                     48: 25,
                     96: 10
-                }
+                },
+                incubationTime: "10 minutes"
+            },
+            rnaimax: {
+                name: "Lipofectamine RNAiMAX",
+                type: "siRNA",
+                culture: "adherent",
+                // For siRNA - uses pmol instead of µg
+                defaultSiRNA: {
+                    96: 2,    // pmol
+                    48: 3,
+                    24: 6,
+                    12: 12,
+                    6: 30
+                },
+                reagentAmount: {
+                    96: 0.3,  // µL RNAiMAX
+                    48: 0.5,
+                    24: 1.0,
+                    12: 2.0,
+                    6: 5.0
+                },
+                dilutionMedia: {
+                    96: 25,
+                    48: 25,
+                    24: 50,
+                    12: 50,
+                    6: 125
+                },
+                incubationTime: "10-20 minutes",
+                finalConcentration: "10 nM"
+            },
+            expiCHO: {
+                name: "Expifectamine CHO",
+                type: "DNA",
+                culture: "suspension",
+                dnaConcentration: 1.0, // µg DNA per mL culture (Thermo Fisher: 0.6-0.8, using 1.0 as standard)
+                ratio: 3.2, // µL reagent per µg DNA (Thermo Fisher: 3.2:1)
+                dilutionPerMl: 40, // µL Opti-PRO per mL culture
+                incubationTime: "5-10 minutes",
+                note: "For ExpiCHO-S suspension cells in Erlenmeyer flasks"
             }
         };
+
+        // Handle reagent selection change
+        function handleReagentChange() {
+            const reagentType = document.getElementById('reagent').value;
+            if (!reagentType) return;
+
+            const protocol = protocols[reagentType];
+            const plateFormatGroup = document.getElementById('plate-format').parentElement;
+            const nucleicAcidGroup = document.getElementById('nucleic-acid-group');
+            const nucleicAcidLabel = document.getElementById('nucleic-acid-label');
+            const cultureVolumeGroup = document.getElementById('culture-volume-group');
+            const numWellsGroup = document.getElementById('num-wells').parentElement;
+
+            // Handle suspension culture (Expifectamine)
+            if (protocol.culture === 'suspension') {
+                plateFormatGroup.style.display = 'none';
+                numWellsGroup.style.display = 'none';
+                cultureVolumeGroup.style.display = 'block';
+                nucleicAcidLabel.textContent = 'DNA Concentration (µg/mL):';
+                document.getElementById('dna-amount').placeholder = 'Leave blank for 1.0 µg/mL';
+            } else {
+                plateFormatGroup.style.display = 'block';
+                numWellsGroup.style.display = 'block';
+                cultureVolumeGroup.style.display = 'none';
+
+                // Handle siRNA vs DNA
+                if (protocol.type === 'siRNA') {
+                    nucleicAcidLabel.textContent = 'siRNA per Well (pmol):';
+                    document.getElementById('dna-amount').placeholder = 'Leave blank for default';
+                } else {
+                    nucleicAcidLabel.textContent = 'DNA per Well (µg):';
+                    document.getElementById('dna-amount').placeholder = 'Leave blank for default';
+                }
+            }
+        }
 
         // This function runs when the form is submitted
         document.getElementById('transfection-form').addEventListener('submit', function(e) {
@@ -319,84 +446,227 @@
         });
 
         function calculateReagents() {
-            // Get user inputs
             const reagentType = document.getElementById('reagent').value;
-            const plateFormat = document.getElementById('plate-format').value;
-            const numWells = parseInt(document.getElementById('num-wells').value);
-            const customDNA = parseFloat(document.getElementById('dna-amount').value);
-
-            // Get the protocol for selected reagent
             const protocol = protocols[reagentType];
-
-            // Determine DNA amount (use custom or default)
-            const dnaPerWell = customDNA || protocol.defaultDNA[plateFormat];
-
-            // Calculate total amounts with 10% overage
             const overage = 1.10;
-            const totalDNA = (dnaPerWell * numWells * overage).toFixed(2);
-            const totalReagent = (dnaPerWell * protocol.ratio * numWells * overage).toFixed(2);
-            const totalDilutionMedia = (protocol.dilutionMedia[plateFormat] * numWells * overage).toFixed(2);
 
-            // Build results HTML
-            let resultsHTML = `
-                <div class="result-item">
-                    <span class="result-label">Reagent:</span>
-                    <span class="result-value">${protocol.name}</span>
-                </div>
-                <div class="result-item">
-                    <span class="result-label">Plate Format:</span>
-                    <span class="result-value">${plateFormat}-well plate</span>
-                </div>
-                <div class="result-item">
-                    <span class="result-label">Number of Wells:</span>
-                    <span class="result-value">${numWells} wells</span>
-                </div>
-                <div class="result-item">
-                    <span class="result-label">DNA per Well:</span>
-                    <span class="result-value">${dnaPerWell} µg</span>
-                </div>
-                <hr>
-                <div class="result-item">
-                    <span class="result-label">Total DNA Needed:</span>
-                    <span class="result-value">${totalDNA} µg</span>
-                </div>
-                <div class="result-item">
-                    <span class="result-label">Total ${protocol.name}:</span>
-                    <span class="result-value">${totalReagent} µL</span>
-                </div>
-            `;
+            let resultsHTML = '';
 
-            // Add P3000 for Lipofectamine 3000
-            if (reagentType === 'lipo3000') {
-                const totalP3000 = (dnaPerWell * protocol.p3000Ratio * numWells * overage).toFixed(2);
-                resultsHTML += `
+            // SUSPENSION CULTURE (Expifectamine CHO)
+            if (protocol.culture === 'suspension') {
+                const cultureVolume = parseFloat(document.getElementById('culture-volume').value);
+                const customDNAConc = parseFloat(document.getElementById('dna-amount').value);
+                const dnaConc = customDNAConc || protocol.dnaConcentration;
+
+                const totalDNA = (cultureVolume * dnaConc).toFixed(1);
+                const totalReagent = (totalDNA * protocol.ratio).toFixed(1);
+                const totalDilutionMedia = (cultureVolume * protocol.dilutionPerMl).toFixed(1);
+
+                resultsHTML = `
                     <div class="result-item">
-                        <span class="result-label">Total P3000 Reagent:</span>
-                        <span class="result-value">${totalP3000} µL</span>
+                        <span class="result-label">Reagent:</span>
+                        <span class="result-value">${protocol.name}</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Culture Type:</span>
+                        <span class="result-value">Suspension (ExpiCHO-S cells)</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Culture Volume:</span>
+                        <span class="result-value">${cultureVolume} mL</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">DNA Concentration:</span>
+                        <span class="result-value">${dnaConc} µg/mL</span>
+                    </div>
+                    <hr>
+                    <div class="result-item">
+                        <span class="result-label">Total DNA Needed:</span>
+                        <span class="result-value">${totalDNA} µg</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Total Expifectamine CHO:</span>
+                        <span class="result-value">${totalReagent} µL</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Opti-PRO SFM (for dilution):</span>
+                        <span class="result-value">${totalDilutionMedia} µL</span>
+                    </div>
+                    <div class="protocol-info">
+                        <strong>📝 Protocol Steps (Thermo Fisher Official):</strong><br><br>
+                        <strong>Step 1:</strong> Dilute ${totalDNA} µg DNA in ${totalDilutionMedia} µL Opti-PRO SFM. Mix gently.<br><br>
+                        <strong>Step 2:</strong> Add ${totalReagent} µL Expifectamine CHO directly to the diluted DNA. Mix immediately.<br><br>
+                        <strong>Step 3:</strong> Incubate ${protocol.incubationTime} at room temperature.<br><br>
+                        <strong>Step 4:</strong> Add the entire DNA-Expifectamine mixture to ${cultureVolume} mL ExpiCHO-S cells in shaker flask.<br><br>
+                        <em>ℹ️ ${protocol.note}</em>
                     </div>
                 `;
-            }
 
-            resultsHTML += `
-                <div class="result-item">
-                    <span class="result-label">Serum-Free Media (for dilution):</span>
-                    <span class="result-value">${totalDilutionMedia} µL per tube</span>
-                </div>
-                <div class="protocol-info">
-                    <strong>📝 Protocol Steps:</strong><br><br>
-                    <strong>Tube 1:</strong> Dilute ${totalDNA} µg DNA in ${totalDilutionMedia} µL serum-free media. Mix gently.<br><br>
-                    <strong>Tube 2:</strong> Dilute ${totalReagent} µL ${protocol.name} in ${totalDilutionMedia} µL serum-free media. Mix gently.${reagentType === 'lipo3000' ? `<br><br><strong>Note:</strong> Add P3000 to Tube 1 with the DNA before mixing.` : ''}<br><br>
-                    <strong>Combine:</strong> Add Tube 2 to Tube 1. Mix gently and incubate for ${reagentType === 'pei' ? '15-20' : '5-20'} minutes at room temperature.<br><br>
-                    <strong>Add to cells:</strong> Add the complex dropwise to cells in ${plateFormat}-well plate. Gently rock the plate.<br><br>
-                    <em>⚠️ Amounts include 10% overage for pipetting error.</em>
-                </div>
-            `;
+            // siRNA TRANSFECTION (RNAiMAX)
+            } else if (protocol.type === 'siRNA') {
+                const plateFormat = document.getElementById('plate-format').value;
+                const numWells = parseInt(document.getElementById('num-wells').value);
+                const customSiRNA = parseFloat(document.getElementById('dna-amount').value);
+
+                const siRNAPerWell = customSiRNA || protocol.defaultSiRNA[plateFormat];
+                const reagentPerWell = protocol.reagentAmount[plateFormat];
+
+                const totalSiRNA = (siRNAPerWell * numWells * overage).toFixed(1);
+                const totalReagent = (reagentPerWell * numWells * overage).toFixed(2);
+                const totalDilutionMedia = (protocol.dilutionMedia[plateFormat] * numWells * overage).toFixed(1);
+
+                resultsHTML = `
+                    <div class="result-item">
+                        <span class="result-label">Reagent:</span>
+                        <span class="result-value">${protocol.name}</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Plate Format:</span>
+                        <span class="result-value">${plateFormat}-well plate</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Number of Wells:</span>
+                        <span class="result-value">${numWells} wells</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">siRNA per Well:</span>
+                        <span class="result-value">${siRNAPerWell} pmol (${protocol.finalConcentration})</span>
+                    </div>
+                    <hr>
+                    <div class="result-item">
+                        <span class="result-label">Total siRNA Needed:</span>
+                        <span class="result-value">${totalSiRNA} pmol</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Total RNAiMAX:</span>
+                        <span class="result-value">${totalReagent} µL</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Serum-Free Media (per tube):</span>
+                        <span class="result-value">${totalDilutionMedia} µL</span>
+                    </div>
+                    <div class="protocol-info">
+                        <strong>📝 Protocol Steps (Thermo Fisher Official):</strong><br><br>
+                        <strong>Tube 1:</strong> Dilute ${totalSiRNA} pmol siRNA in ${totalDilutionMedia} µL Opti-MEM or serum-free media. Mix gently.<br><br>
+                        <strong>Tube 2:</strong> Dilute ${totalReagent} µL RNAiMAX in ${totalDilutionMedia} µL Opti-MEM. Mix gently.<br><br>
+                        <strong>Combine:</strong> Add Tube 2 to Tube 1. Mix gently and incubate ${protocol.incubationTime} at room temperature.<br><br>
+                        <strong>Add to cells:</strong> Add the complex to cells in ${plateFormat}-well plate. Gently swirl the plate.<br><br>
+                        <em>⚠️ Amounts include 10% overage. Final siRNA concentration: ${protocol.finalConcentration}</em>
+                    </div>
+                `;
+
+            // DNA TRANSFECTION (All adherent cell reagents)
+            } else {
+                const plateFormat = document.getElementById('plate-format').value;
+                const numWells = parseInt(document.getElementById('num-wells').value);
+                const customDNA = parseFloat(document.getElementById('dna-amount').value);
+
+                const dnaPerWell = customDNA || protocol.defaultDNA[plateFormat];
+                const totalDNA = (dnaPerWell * numWells * overage).toFixed(2);
+                const totalReagent = (dnaPerWell * protocol.ratio * numWells * overage).toFixed(2);
+                const totalDilutionMedia = (protocol.dilutionMedia[plateFormat] * numWells * overage).toFixed(1);
+
+                resultsHTML = `
+                    <div class="result-item">
+                        <span class="result-label">Reagent:</span>
+                        <span class="result-value">${protocol.name}</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Plate Format:</span>
+                        <span class="result-value">${plateFormat}-well plate</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Number of Wells:</span>
+                        <span class="result-value">${numWells} wells</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">DNA per Well:</span>
+                        <span class="result-value">${dnaPerWell} µg</span>
+                    </div>
+                    <hr>
+                    <div class="result-item">
+                        <span class="result-label">Total DNA Needed:</span>
+                        <span class="result-value">${totalDNA} µg</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Total ${protocol.name.split(' ')[0]}:</span>
+                        <span class="result-value">${totalReagent} µL</span>
+                    </div>
+                `;
+
+                // Add P3000 for Lipofectamine 3000
+                if (reagentType === 'lipo3000') {
+                    const totalP3000 = (dnaPerWell * protocol.p3000Ratio * numWells * overage).toFixed(2);
+                    resultsHTML += `
+                        <div class="result-item">
+                            <span class="result-label">Total P3000 Reagent:</span>
+                            <span class="result-value">${totalP3000} µL</span>
+                        </div>
+                    `;
+                }
+
+                // Add PLUS for Lipofectamine LTX
+                if (reagentType === 'lipoLTX') {
+                    const totalPLUS = (dnaPerWell * protocol.plusRatio * numWells * overage).toFixed(2);
+                    resultsHTML += `
+                        <div class="result-item">
+                            <span class="result-label">Total PLUS Reagent:</span>
+                            <span class="result-value">${totalPLUS} µL</span>
+                        </div>
+                    `;
+                }
+
+                resultsHTML += `
+                    <div class="result-item">
+                        <span class="result-label">Serum-Free Media (per tube):</span>
+                        <span class="result-value">${totalDilutionMedia} µL</span>
+                    </div>
+                `;
+
+                // Build protocol steps based on reagent type
+                let protocolSteps = `<strong>📝 Protocol Steps (Manufacturer Official):</strong><br><br>`;
+
+                if (reagentType === 'fugene') {
+                    protocolSteps += `
+                        <strong>Step 1:</strong> Add ${totalReagent} µL FuGENE HD directly to ${totalDilutionMedia} µL serum-free media (NO SERUM). Do NOT let FuGENE HD contact the tube walls.<br><br>
+                        <strong>Step 2:</strong> Add ${totalDNA} µg DNA to the diluted FuGENE HD. Mix gently by pipetting.<br><br>
+                        <strong>Step 3:</strong> Incubate ${protocol.incubationTime} at room temperature.<br><br>
+                        <strong>Step 4:</strong> Add complex dropwise to cells in ${plateFormat}-well plate.<br><br>
+                        <em>ℹ️ ${protocol.note}</em>
+                    `;
+                } else if (reagentType === 'lipoLTX') {
+                    const totalPLUS = (dnaPerWell * protocol.plusRatio * numWells * overage).toFixed(2);
+                    protocolSteps += `
+                        <strong>Tube 1:</strong> Dilute ${totalDNA} µg DNA in ${totalDilutionMedia} µL Opti-MEM. Add ${totalPLUS} µL PLUS Reagent. Mix and incubate 5 minutes.<br><br>
+                        <strong>Tube 2:</strong> Dilute ${totalReagent} µL Lipofectamine LTX in ${totalDilutionMedia} µL Opti-MEM.<br><br>
+                        <strong>Combine:</strong> Add Tube 2 to Tube 1. Mix gently and incubate ${protocol.incubationTime} at room temperature.<br><br>
+                        <strong>Add to cells:</strong> Add complex dropwise to ${plateFormat}-well plate.
+                    `;
+                } else if (reagentType === 'lipo3000') {
+                    const totalP3000 = (dnaPerWell * protocol.p3000Ratio * numWells * overage).toFixed(2);
+                    protocolSteps += `
+                        <strong>Tube 1:</strong> Dilute ${totalDNA} µg DNA in ${totalDilutionMedia} µL Opti-MEM. Add ${totalP3000} µL P3000 Reagent. Mix gently.<br><br>
+                        <strong>Tube 2:</strong> Dilute ${totalReagent} µL Lipofectamine 3000 in ${totalDilutionMedia} µL Opti-MEM. Mix gently.<br><br>
+                        <strong>Combine:</strong> Add Tube 2 to Tube 1. Mix and incubate ${protocol.incubationTime} at room temperature.<br><br>
+                        <strong>Add to cells:</strong> Add complex dropwise to ${plateFormat}-well plate.
+                    `;
+                } else {
+                    protocolSteps += `
+                        <strong>Tube 1:</strong> Dilute ${totalDNA} µg DNA in ${totalDilutionMedia} µL serum-free media. Mix gently.<br><br>
+                        <strong>Tube 2:</strong> Dilute ${totalReagent} µL ${protocol.name} in ${totalDilutionMedia} µL serum-free media. Mix gently.<br><br>
+                        <strong>Combine:</strong> Add Tube 2 to Tube 1. Mix and incubate ${protocol.incubationTime} at room temperature.<br><br>
+                        <strong>Add to cells:</strong> Add complex dropwise to ${plateFormat}-well plate.
+                    `;
+                }
+
+                protocolSteps += `<br><br><em>⚠️ Amounts include 10% overage for pipetting error.</em>`;
+
+                resultsHTML += `<div class="protocol-info">${protocolSteps}</div>`;
+            }
 
             // Display results
             document.getElementById('results-content').innerHTML = resultsHTML;
             document.getElementById('results').classList.add('show');
-
-            // Scroll to results
             document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     </script>
