@@ -167,7 +167,7 @@
         <p class="subtitle">Calculate reagent amounts for DNA & siRNA transfections (adherent & suspension)</p>
 
         <div class="info-box">
-            <strong>ℹ️ How to use:</strong> Select your transfection reagent (the form will adapt automatically). Choose your plate format or culture volume, enter the number of wells, and click calculate. All protocols use exact manufacturer specifications and include 10% overage for pipetting error.
+            <strong>ℹ️ How to use:</strong> Select your transfection reagent (the form adapts automatically). Enter amounts in any unit (µg, ng, pmol, nmol, µM, nM, ng/µL, µg/µL). For molar conversions, provide sequence length. For stock concentrations, specify volume to add. All protocols use exact manufacturer specifications with 10% overage.
         </div>
 
         <form id="transfection-form">
@@ -212,8 +212,30 @@
             </div>
 
             <div class="form-group" id="nucleic-acid-group">
-                <label for="dna-amount" id="nucleic-acid-label">DNA per Well (µg):</label>
-                <input type="number" id="dna-amount" step="0.1" placeholder="Leave blank for default" min="0">
+                <label for="dna-amount" id="nucleic-acid-label">Amount per Well:</label>
+                <div class="grid">
+                    <input type="number" id="dna-amount" step="0.01" placeholder="Leave blank for default" min="0">
+                    <select id="amount-unit" onchange="handleUnitChange()">
+                        <option value="ug">µg (micrograms)</option>
+                        <option value="ng">ng (nanograms)</option>
+                        <option value="pmol">pmol (picomoles)</option>
+                        <option value="nmol">nmol (nanomoles)</option>
+                        <option value="uM">µM (stock concentration)</option>
+                        <option value="nM">nM (stock concentration)</option>
+                        <option value="ng_ul">ng/µL (stock)</option>
+                        <option value="ug_ul">µg/µL (stock)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group" id="sequence-length-group" style="display:none;">
+                <label for="sequence-length">Sequence Length (bp or nt) <span style="color:#999;">- Required for molar conversions</span>:</label>
+                <input type="number" id="sequence-length" step="1" placeholder="e.g., 5000 for a 5kb plasmid, 21 for siRNA" min="1">
+            </div>
+
+            <div class="form-group" id="stock-volume-group" style="display:none;">
+                <label for="stock-volume">Volume to Add (µL) <span style="color:#999;">- For concentration inputs</span>:</label>
+                <input type="number" id="stock-volume" step="0.1" placeholder="e.g., 2.5" min="0">
             </div>
 
             <div class="form-group" id="culture-volume-group" style="display:none;">
@@ -404,6 +426,112 @@
             }
         };
 
+        // Unit conversion utilities
+        const UnitConverter = {
+            // Molecular weight calculation
+            // DNA: ~650 Da per bp (average)
+            // RNA: ~340 Da per nt (average)
+            calculateMW: function(lengthBp, isRNA = false) {
+                return isRNA ? lengthBp * 340 : lengthBp * 650;
+            },
+
+            // Convert any unit to µg (standard unit)
+            toMicrograms: function(amount, unit, sequenceLength, stockVolume, isRNA = false) {
+                if (!amount || amount === 0) return null;
+
+                switch(unit) {
+                    case 'ug': return amount;
+                    case 'ng': return amount / 1000;
+                    case 'pmol':
+                        if (!sequenceLength) return null;
+                        const mw_pmol = this.calculateMW(sequenceLength, isRNA);
+                        return (amount * mw_pmol) / 1e6;
+                    case 'nmol':
+                        if (!sequenceLength) return null;
+                        const mw_nmol = this.calculateMW(sequenceLength, isRNA);
+                        return (amount * mw_nmol) / 1e3;
+                    case 'uM':
+                        if (!sequenceLength || !stockVolume) return null;
+                        const mw_uM = this.calculateMW(sequenceLength, isRNA);
+                        return (amount * stockVolume * mw_uM) / 1e6; // C(µM) * V(µL) * MW(g/mol) / 1e6
+                    case 'nM':
+                        if (!sequenceLength || !stockVolume) return null;
+                        const mw_nM = this.calculateMW(sequenceLength, isRNA);
+                        return (amount * stockVolume * mw_nM) / 1e9; // C(nM) * V(µL) * MW(g/mol) / 1e9
+                    case 'ng_ul':
+                        if (!stockVolume) return null;
+                        return (amount * stockVolume) / 1000; // ng/µL * µL / 1000
+                    case 'ug_ul':
+                        if (!stockVolume) return null;
+                        return amount * stockVolume; // µg/µL * µL
+                    default: return null;
+                }
+            },
+
+            // Convert µg to target unit
+            fromMicrograms: function(ug, targetUnit, sequenceLength, isRNA = false) {
+                if (!ug) return null;
+
+                switch(targetUnit) {
+                    case 'ug': return ug;
+                    case 'ng': return ug * 1000;
+                    case 'pmol':
+                        if (!sequenceLength) return null;
+                        const mw_pmol = this.calculateMW(sequenceLength, isRNA);
+                        return (ug * 1e6) / mw_pmol;
+                    case 'nmol':
+                        if (!sequenceLength) return null;
+                        const mw_nmol = this.calculateMW(sequenceLength, isRNA);
+                        return (ug * 1e3) / mw_nmol;
+                    default: return null;
+                }
+            },
+
+            // Get display info for conversions
+            getConversions: function(ug, sequenceLength, isRNA = false) {
+                if (!ug) return [];
+
+                const conversions = [
+                    { label: 'µg', value: ug.toFixed(3) },
+                    { label: 'ng', value: (ug * 1000).toFixed(2) }
+                ];
+
+                if (sequenceLength) {
+                    const mw = this.calculateMW(sequenceLength, isRNA);
+                    const pmol = (ug * 1e6) / mw;
+                    const nmol = (ug * 1e3) / mw;
+                    conversions.push(
+                        { label: 'pmol', value: pmol.toFixed(2) },
+                        { label: 'nmol', value: nmol.toFixed(3) },
+                        { label: 'MW', value: `${(mw/1000).toFixed(1)} kDa` }
+                    );
+                }
+
+                return conversions;
+            }
+        };
+
+        // Handle unit selection change
+        function handleUnitChange() {
+            const unit = document.getElementById('amount-unit').value;
+            const sequenceLengthGroup = document.getElementById('sequence-length-group');
+            const stockVolumeGroup = document.getElementById('stock-volume-group');
+
+            // Show sequence length field for molar units
+            if (['pmol', 'nmol', 'uM', 'nM'].includes(unit)) {
+                sequenceLengthGroup.style.display = 'block';
+            } else {
+                sequenceLengthGroup.style.display = 'none';
+            }
+
+            // Show volume field for concentration units
+            if (['uM', 'nM', 'ng_ul', 'ug_ul'].includes(unit)) {
+                stockVolumeGroup.style.display = 'block';
+            } else {
+                stockVolumeGroup.style.display = 'none';
+            }
+        }
+
         // Handle reagent selection change
         function handleReagentChange() {
             const reagentType = document.getElementById('reagent').value;
@@ -415,13 +543,14 @@
             const nucleicAcidLabel = document.getElementById('nucleic-acid-label');
             const cultureVolumeGroup = document.getElementById('culture-volume-group');
             const numWellsGroup = document.getElementById('num-wells').parentElement;
+            const amountUnit = document.getElementById('amount-unit');
 
             // Handle suspension culture (Expifectamine)
             if (protocol.culture === 'suspension') {
                 plateFormatGroup.style.display = 'none';
                 numWellsGroup.style.display = 'none';
                 cultureVolumeGroup.style.display = 'block';
-                nucleicAcidLabel.textContent = 'DNA Concentration (µg/mL):';
+                nucleicAcidLabel.textContent = 'DNA Concentration:';
                 document.getElementById('dna-amount').placeholder = 'Leave blank for 1.0 µg/mL';
             } else {
                 plateFormatGroup.style.display = 'block';
@@ -430,13 +559,20 @@
 
                 // Handle siRNA vs DNA
                 if (protocol.type === 'siRNA') {
-                    nucleicAcidLabel.textContent = 'siRNA per Well (pmol):';
+                    nucleicAcidLabel.textContent = 'siRNA Amount per Well:';
                     document.getElementById('dna-amount').placeholder = 'Leave blank for default';
+                    // Set default unit to pmol for siRNA
+                    amountUnit.value = 'pmol';
                 } else {
-                    nucleicAcidLabel.textContent = 'DNA per Well (µg):';
+                    nucleicAcidLabel.textContent = 'DNA Amount per Well:';
                     document.getElementById('dna-amount').placeholder = 'Leave blank for default';
+                    // Set default unit to µg for DNA
+                    amountUnit.value = 'ug';
                 }
             }
+
+            // Trigger unit change to show/hide appropriate fields
+            handleUnitChange();
         }
 
         // This function runs when the form is submitted
@@ -450,13 +586,28 @@
             const protocol = protocols[reagentType];
             const overage = 1.10;
 
+            // Get unit conversion inputs
+            const inputAmount = parseFloat(document.getElementById('dna-amount').value);
+            const inputUnit = document.getElementById('amount-unit').value;
+            const sequenceLength = parseFloat(document.getElementById('sequence-length').value) || null;
+            const stockVolume = parseFloat(document.getElementById('stock-volume').value) || null;
+            const isRNA = protocol.type === 'siRNA';
+
             let resultsHTML = '';
 
             // SUSPENSION CULTURE (Expifectamine CHO)
             if (protocol.culture === 'suspension') {
                 const cultureVolume = parseFloat(document.getElementById('culture-volume').value);
-                const customDNAConc = parseFloat(document.getElementById('dna-amount').value);
-                const dnaConc = customDNAConc || protocol.dnaConcentration;
+                let dnaConc = protocol.dnaConcentration;
+
+                // Convert input to µg/mL if custom amount provided
+                if (inputAmount && inputUnit) {
+                    // For suspension, we need µg total first
+                    const ugPerMl = UnitConverter.toMicrograms(inputAmount, inputUnit, sequenceLength, stockVolume, false);
+                    if (ugPerMl !== null) {
+                        dnaConc = ugPerMl;
+                    }
+                }
 
                 const totalDNA = (cultureVolume * dnaConc).toFixed(1);
                 const totalReagent = (totalDNA * protocol.ratio).toFixed(1);
@@ -506,14 +657,38 @@
             } else if (protocol.type === 'siRNA') {
                 const plateFormat = document.getElementById('plate-format').value;
                 const numWells = parseInt(document.getElementById('num-wells').value);
-                const customSiRNA = parseFloat(document.getElementById('dna-amount').value);
 
-                const siRNAPerWell = customSiRNA || protocol.defaultSiRNA[plateFormat];
+                // Get siRNA amount in pmol (either from default or convert from input)
+                let siRNAPerWell = protocol.defaultSiRNA[plateFormat];
+                let siRNAInUg = null;
+
+                if (inputAmount && inputUnit) {
+                    if (inputUnit === 'pmol') {
+                        siRNAPerWell = inputAmount;
+                    } else {
+                        // Convert to µg first, then to pmol
+                        siRNAInUg = UnitConverter.toMicrograms(inputAmount, inputUnit, sequenceLength, stockVolume, true);
+                        if (siRNAInUg !== null && sequenceLength) {
+                            siRNAPerWell = UnitConverter.fromMicrograms(siRNAInUg, 'pmol', sequenceLength, true);
+                        }
+                    }
+                }
+
                 const reagentPerWell = protocol.reagentAmount[plateFormat];
 
                 const totalSiRNA = (siRNAPerWell * numWells * overage).toFixed(1);
                 const totalReagent = (reagentPerWell * numWells * overage).toFixed(2);
                 const totalDilutionMedia = (protocol.dilutionMedia[plateFormat] * numWells * overage).toFixed(1);
+
+                // Get conversions for display
+                let conversionHTML = '';
+                if (sequenceLength) {
+                    const ugPerWell = siRNAInUg || UnitConverter.toMicrograms(siRNAPerWell, 'pmol', sequenceLength, null, true);
+                    const conversions = UnitConverter.getConversions(ugPerWell, sequenceLength, true);
+                    conversionHTML = `<div style="font-size:0.9em; color:#666; margin-top:5px;">
+                        Equivalent to: ${conversions.filter(c => c.label !== 'pmol').map(c => `${c.value} ${c.label}`).join(', ')}
+                    </div>`;
+                }
 
                 resultsHTML = `
                     <div class="result-item">
@@ -530,7 +705,8 @@
                     </div>
                     <div class="result-item">
                         <span class="result-label">siRNA per Well:</span>
-                        <span class="result-value">${siRNAPerWell} pmol (${protocol.finalConcentration})</span>
+                        <span class="result-value">${siRNAPerWell.toFixed(1)} pmol (${protocol.finalConcentration})</span>
+                        ${conversionHTML}
                     </div>
                     <hr>
                     <div class="result-item">
@@ -559,12 +735,30 @@
             } else {
                 const plateFormat = document.getElementById('plate-format').value;
                 const numWells = parseInt(document.getElementById('num-wells').value);
-                const customDNA = parseFloat(document.getElementById('dna-amount').value);
 
-                const dnaPerWell = customDNA || protocol.defaultDNA[plateFormat];
+                // Get DNA amount in µg (either from default or convert from input)
+                let dnaPerWell = protocol.defaultDNA[plateFormat];
+
+                if (inputAmount && inputUnit) {
+                    const convertedDNA = UnitConverter.toMicrograms(inputAmount, inputUnit, sequenceLength, stockVolume, false);
+                    if (convertedDNA !== null) {
+                        dnaPerWell = convertedDNA;
+                    }
+                }
                 const totalDNA = (dnaPerWell * numWells * overage).toFixed(2);
                 const totalReagent = (dnaPerWell * protocol.ratio * numWells * overage).toFixed(2);
                 const totalDilutionMedia = (protocol.dilutionMedia[plateFormat] * numWells * overage).toFixed(1);
+
+                // Get conversions for display
+                let dnaConversionHTML = '';
+                if (sequenceLength || inputAmount) {
+                    const conversions = UnitConverter.getConversions(dnaPerWell, sequenceLength, false);
+                    if (conversions.length > 2) {
+                        dnaConversionHTML = `<div style="font-size:0.9em; color:#666; margin-top:5px;">
+                            Equivalent to: ${conversions.filter(c => c.label !== 'µg').map(c => `${c.value} ${c.label}`).join(', ')}
+                        </div>`;
+                    }
+                }
 
                 resultsHTML = `
                     <div class="result-item">
@@ -581,7 +775,8 @@
                     </div>
                     <div class="result-item">
                         <span class="result-label">DNA per Well:</span>
-                        <span class="result-value">${dnaPerWell} µg</span>
+                        <span class="result-value">${dnaPerWell.toFixed(3)} µg</span>
+                        ${dnaConversionHTML}
                     </div>
                     <hr>
                     <div class="result-item">
